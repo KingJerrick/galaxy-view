@@ -3,7 +3,7 @@
 # @Time    : 2024/9/19 19:53
 # @Author  : Jerrick Zhu
 # @File    : main.py
-# @IDE     : PyCharm
+# @IDE     : PyCharm v2024
 
 
 import sys
