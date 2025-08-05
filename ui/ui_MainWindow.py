@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 
-# Form implementation generated from reading ui file 'ui_MainWindow.ui'
+# Form implementation generated from reading ui file 'd:\PycharmProjects\galaxy-view\ui\ui_MainWindow.ui'
 #
 # Created by: PyQt5 UI code generator 5.15.9
 #
@@ -52,6 +52,8 @@ class Ui_MainWindow(object):
         font = QtGui.QFont()
         font.setPointSize(12)
         self.spinBox.setFont(font)
+        self.spinBox.setMinimum(1)
+        self.spinBox.setMaximum(12)
         self.spinBox.setProperty("value", 1)
         self.spinBox.setObjectName("spinBox")
         self.horizontalLayout.addWidget(self.spinBox)

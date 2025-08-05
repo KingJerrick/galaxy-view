@@ -42,7 +42,12 @@ class ClearableTextEdit(QTextEdit):
             self.clear()
 
 class CameraLabel(QLabel):
+    """
+    相机专用label
+    """
     closed = pyqtSignal(int)
+    pause = pyqtSignal(int)
+    save = pyqtSignal(int)
     def __init__(self, serial, parent=None):
         super().__init__(parent)
         self.serial = serial
@@ -58,12 +63,10 @@ class CameraLabel(QLabel):
         action = menu.exec_(event.globalPos())
 
         if action == pause_action:
-            print(f"暂停相机 {self.serial}")
-            if self.on_pause:
-                self.on_pause(self.serial)
+            self.pause.emit(self.serial)
+            
         elif action == save_action:
-            print(f"保存图像 {self.serial}")
-            if self.on_save:
-                self.on_save(self.serial)
+            self.save.emit(self.serial)
+
         elif action == close_action:
             self.closed.emit(self.serial)

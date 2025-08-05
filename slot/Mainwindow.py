@@ -12,18 +12,22 @@ import ui.ui_MainWindow
 import os
 import gxipy as gx
 from PyQt5.QtWidgets import QMainWindow, QApplication, QFileDialog, QTextEdit, QLabel, QGridLayout
-from PyQt5.QtCore import QTimer, Qt, QObject, pyqtSignal
+from PyQt5.QtCore import QTimer, Qt, QObject, pyqtSignal,QThread
 from PIL import Image
 from PyQt5 import QtGui
-from PyQt5.QtGui import QPixmap
+from PyQt5.QtGui import QPixmap, QImage
 import slot.Custom_Widgets as CS
 from datetime import datetime
 import time
 
 
+import threading
+import time
+from PyQt5.QtCore import QObject, pyqtSignal
+
 class ImageAcquisitionWorker(QObject):
-    image_acquired = pyqtSignal(np.ndarray)  # 用于传递图像的信号
-    current_frame_signal = pyqtSignal(np.ndarray)  # 用于显示当前帧的信号
+    image_acquired = pyqtSignal(object)  # numpy.ndarray类型传递时用object更稳妥
+    current_frame_signal = pyqtSignal(object)
 
     def __init__(self):
         super().__init__()
@@ -31,66 +35,73 @@ class ImageAcquisitionWorker(QObject):
         self.frame_rate = 6
         self.exposure_time = 10
         self.cam = None
+        self.current_frame = None
+        self._thread = None
 
-    def start_acquisition(self):
-        if self.cam is None:
-            return
-
-        # 设置帧率和曝光时间
+    def _acquisition_loop(self):
         if self.cam.AcquisitionFrameRate.is_writable():
             self.cam.AcquisitionFrameRate.set(self.frame_rate)
         if self.cam.ExposureTime.is_writable():
             self.cam.ExposureTime.set(self.exposure_time)
-        # if self.cam.BalanceWhiteAuto.is_implemented() and self.cam.BalanceWhiteAuto.is_writable():
-        #     # 设置自动白平衡模式为 Continuous（持续自动调整）
-        #     self.cam.BalanceWhiteAuto.set(gx.GxAutoEntry.ONCE)
 
         self.cam.stream_on()
-        self.running = True
+
         while self.running:
             raw_image = self.cam.data_stream[0].get_image()
-            if raw_image and raw_image.get_status() == gx.GxFrameStatusList.SUCCESS:
+            if raw_image and raw_image.get_status() == 0:  # gx.GxFrameStatusList.SUCCESS通常是0
                 rgb_image = raw_image.convert("RGB")
                 numpy_image = rgb_image.get_numpy_array()
                 if numpy_image is not None:
-                    # 发射信号传递图像
-                    self.current_frame = numpy_image  # 保存当前帧
+                    self.current_frame = numpy_image
                     self.image_acquired.emit(numpy_image)
             time.sleep(0.1)
 
         self.cam.stream_off()
 
+    def start_acquisition(self):
+        if self.cam is None:
+            return
+        if self.running:
+            return  # 已经在运行
+
+        self.running = True
+        self._thread = threading.Thread(target=self._acquisition_loop, daemon=True)
+        self._thread.start()
+
     def stop_acquisition(self):
         self.running = False
+        if self._thread is not None:
+            self._thread.join()  # 等待线程退出，防止资源冲突
+
+    def restart_acquisition(self):
+        if self.running:
+            # 如果正在运行，先停止
+            self.stop_acquisition()
+        self.start_acquisition()
 
     def set_camera(self, cam):
         self.cam = cam
 
     def update_parameters(self, frame_rate, exposure_time):
-        if self.cam is None:
-            self.frame_rate = frame_rate
-            self.exposure_time = exposure_time
-        else:
+        self.frame_rate = frame_rate
+        self.exposure_time = exposure_time
+        if self.cam is not None:
             if self.cam.AcquisitionFrameRate.is_writable():
                 self.cam.AcquisitionFrameRate.set(frame_rate)
             if self.cam.ExposureTime.is_writable():
                 self.cam.ExposureTime.set(exposure_time)
-            # if self.cam.BalanceWhiteAuto.is_implemented() and self.cam.BalanceWhiteAuto.is_writable():
-            #     # 设置自动白平衡模式为 Continuous（持续自动调整）
-            #     self.cam.BalanceWhiteAuto.set(gx.GxAutoEntry.ONCE)
-
 
     def get_current_frame(self):
-        # 将当前帧通过信号发射
         if self.current_frame is not None:
             self.current_frame_signal.emit(self.current_frame)
-
 
 class MainwindowAct(QMainWindow,ui.ui_MainWindow.Ui_MainWindow):
     def __init__(self):
         super(MainwindowAct, self).__init__()
         self.setupUi(self)
         self.camera_map = {}
+        self.last_images = {}
+
 
         self.grid_layout = self.gridGroupBox.layout()
         assert isinstance(self.grid_layout, QGridLayout), "gridGroupBox 必须设置为 GridLayout！"
@@ -121,8 +132,42 @@ class MainwindowAct(QMainWindow,ui.ui_MainWindow.Ui_MainWindow):
         self.gridGroupBox_2.toggled.connect(lambda checked: self.toggle_group_content(self.gridGroupBox_2, checked))
 
         self.pushButton_2.clicked.connect(self.add_camera_view)
+        self.pushButton.clicked.connect(self.list)
+        self.spinBox2.valueChanged.connect(self.change_parameters)
+        self.spinBox3.valueChanged.connect(self.change_parameters)
+
+    
+    def change_parameters(self):
+        frame_rate = self.spinBox3.value()
+        exposure_time = self.spinBox2.value()
+        for cam_info in self.camera_map.values():
+            worker = cam_info.get("worker")
+            if worker:
+                worker.update_parameters(frame_rate, exposure_time)
+
+    
+    def list(self):
+        if self.comboBox_CamerList.currentIndex() == -1:
+            self.device_manager = gx.DeviceManager()
+            dev_mum, self.dev_info_list = self.device_manager.update_device_list()
+
+            if dev_mum == 0:
+                text = '<font color="red">' + "未找到相机!" + '</font>'
+                self.textEdit.append(text)
+                QApplication.processEvents()
+
+            for i, dev_info in enumerate(self.dev_info_list):
+                display_name = dev_info.get("display_name", f"Camera {i + 1}")
+                self.comboBox_CamerList.addItem(display_name, i)
+        else:
+            text = '<font color="red">' + "请勿重复查找相机!" + '</font>'
+            self.textEdit.append(text)
+            QApplication.processEvents()
 
     def toggle_group_content(self, groupbox, checked):
+        """
+        隐藏部分按键
+        """
         def toggle_layout_items(layout):
             for i in range(layout.count()):
                 item = layout.itemAt(i)
@@ -146,14 +191,36 @@ class MainwindowAct(QMainWindow,ui.ui_MainWindow.Ui_MainWindow):
 
 
         label = CS.CameraLabel(self.spinBox.value())
-        label.setText(f"camera{self.spinBox.value()}")
+        # label.setText(f"camera{self.spinBox.value()}")
         label.setAlignment(Qt.AlignCenter)
         label.setStyleSheet("border: 1px solid gray;")
 
-        label.closed.connect(self.close_camera)
+        worker = ImageAcquisitionWorker()
+        thread = QThread()
+        worker.moveToThread(thread)
 
-        self.camera_map[self.spinBox.value()] = {"sn":"adjvafcc",
+        camera_index = self.comboBox_CamerList.currentIndex()
+        str_cn = self.dev_info_list[camera_index].get("sn")
+        self.cam = self.device_manager.open_device_by_sn(str_cn)
+
+        worker.set_camera(self.cam)  # 打开相机并设置
+
+        worker.image_acquired.connect(lambda img, l=label: self.update_label(l, img))
+
+        thread.started.connect(worker.start_acquisition)
+
+        thread.start()
+
+
+        label.closed.connect(self.close_camera)
+        label.save.connect(self.save_image)
+        label.pause.connect(self.pause_camera)
+
+        self.camera_map[self.spinBox.value()] = {"sn":str_cn,
                                                  "label":label,
+                                                 "worker":worker,
+                                                 "thread":thread,
+                                                 "num_pic":1,
                                                  }
 
         self.update_label_sizes()
@@ -225,17 +292,70 @@ class MainwindowAct(QMainWindow,ui.ui_MainWindow.Ui_MainWindow):
             self.grid_layout.addWidget(label, row, col)
             label.setFixedSize(label_width, label_height)
 
-    def close_camera(self,serial_number):
+    def close_camera(self, serial_number):
         if serial_number not in self.camera_map:
             self.textEdit.append(f"相机 {serial_number} 不存在")
             return
 
-        self.textEdit.append(f"相机 {serial_number} 已关闭")
+        info = self.camera_map[serial_number]
 
+        # 停止线程
+        if "worker" in info:
+            info["worker"].stop_acquisition()
+        if "thread" in info:
+            info["thread"].quit()
+            info["thread"].wait()
+
+        # 关闭相机连接
+        if "cam" in info:
+            try:
+                info["cam"].close_device()
+                self.textEdit.append(f"相机 {serial_number} 已断开")
+            except Exception as e:
+                self.textEdit.append(f"关闭相机 {serial_number} 失败: {e}")
+
+        # 删除 label（不需要手动 del，它的 parent 会被清理）
+        label = info.get("label")
+        if label:
+            label.setParent(None)
+
+        # 删除记录
         del self.camera_map[serial_number]
-        self.textEdit.append(f"当前相机总数:{len(self.camera_map)}")
+        if serial_number in self.last_images:
+            del self.last_images[serial_number]
+
+        self.textEdit.append(f"相机 {serial_number} 已关闭")
+        self.textEdit.append(f"当前相机总数: {len(self.camera_map)}")
 
         self.update_label_sizes()
+
+
+    def update_label(self, label, img):
+        qt_img = QImage(img.data, img.shape[1], img.shape[0], QImage.Format_RGB888)
+        label.setPixmap(QPixmap.fromImage(qt_img).scaled(label.size(), Qt.KeepAspectRatio))
+        self.last_images[label.serial] = img
+
+
+    def save_image(self,serial_number):
+        if not self.verticalGroupBox_2.isChecked():
+            sn = self.camera_labels[serial_number]['sn']
+            num_pic = self.camera_labels[serial_number]['num_pic']
+            file_name = f"{self.date}\\{sn}\\{num_pic}"
+            self.camera_map[serial_number]["num_pic"] = num_pic+1
+            self.last_images[serial_number].save(file_name)
+            self.camera_map[serial_number]['worker'].restart_acquisition()
+
+    def pause_camera(self,serial_number):
+        self.camera_map[serial_number]['worker'].stop_acquisition()
+
+
+
+    def closeEvent(self, event):
+        for serial_number in list(self.camera_map.keys()):
+            self.close_camera(serial_number)
+        event.accept()  # 正常关闭窗口
+
+
 
 
 

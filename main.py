@@ -1,4 +1,4 @@
-# Copyright (C) 2024 - 2024 Jerrick Zhu, Inc. All Rights Reserved 
+# Copyright (C) 2024 - 2024 Jerrick Zhu, Inc. All Rights Reserved
 #
 # @Time    : 2024/9/19 19:53
 # @Author  : Jerrick Zhu
@@ -11,6 +11,7 @@ from PyQt5.QtWidgets import QApplication, QWidget
 import slot.Mainwindow
 from PyQt5.QtCore import Qt
 from PyQt5.QtGui import QIcon
+
 
 
 
