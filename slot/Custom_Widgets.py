@@ -1,13 +1,13 @@
 """
 自定义控件库
 """
-from PyQt5.QtWidgets import QLabel, QTextEdit, QPushButton, QVBoxLayout, QHBoxLayout, QWidget,QMenu
+from PyQt5.QtWidgets import QLabel, QTextEdit, QPushButton, QVBoxLayout, QHBoxLayout, QWidget, QMenu, QLineEdit, QFileDialog
 from PyQt5.QtGui import QContextMenuEvent
 from PyQt5.QtCore import pyqtSignal , Qt
 
 class ClickableLabel(QLabel):
     """
-    提升控件，可点击的label类，返回点击点对应图像的坐标
+    提升控件,可点击的label类,返回点击点对应图像的坐标
     """
     pointClicked = pyqtSignal(int,int)
     def __init__(self, parent=None):
@@ -31,7 +31,7 @@ class ClickableLabel(QLabel):
 
 class ClearableTextEdit(QTextEdit):
     """
-    提升控件带清空的textedit
+    带清空的textedit
     """
     def contextMenuEvent(self, event: QContextMenuEvent):
         menu = self.createStandardContextMenu()
@@ -70,3 +70,19 @@ class CameraLabel(QLabel):
 
         elif action == close_action:
             self.closed.emit(self.serial)
+
+class FolderSelectLineEdit(QLineEdit):
+    """
+    存储文件夹选择lineEdit
+    """
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setReadOnly(True)  # 可选：防止用户手动编辑
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.LeftButton:
+            folder_path = QFileDialog.getExistingDirectory(self, "选择文件夹")
+            if folder_path:
+                self.setText(folder_path)
+        # 继续调用父类方法以保持其他行为（如焦点）
+        super().mousePressEvent(event)

@@ -98,21 +98,31 @@ class ImageAcquisitionWorker(QObject):
 class MainwindowAct(QMainWindow,ui.ui_MainWindow.Ui_MainWindow):
     def __init__(self):
         super(MainwindowAct, self).__init__()
+
+        version = "v2.1.0_Alpha"        #版本号在此修改
         self.setupUi(self)
         self.camera_map = {}
         self.last_images = {}
+        self.label_4.setText(f"Copyright © 2023-2025 Jerrick Zhu, All rights reserved.    {version}")
 
 
         self.grid_layout = self.gridGroupBox.layout()
         assert isinstance(self.grid_layout, QGridLayout), "gridGroupBox 必须设置为 GridLayout！"
 
-        layout = self.textEdit.parent().layout()
+        layout = self.textEdit.parent().layout()    ###替换控件
         index = layout.indexOf(self.textEdit)
         layout.removeWidget(self.textEdit)
         self.textEdit.deleteLater()
-
         self.textEdit = CS.ClearableTextEdit(self)
-        layout.insertWidget(index, self.textEdit)
+        layout.insertWidget(index, self.textEdit)   ###替换控件
+
+
+        layout = self.lineEdit.parent().layout()
+        index = layout.indexOf(self.lineEdit)
+        layout.removeWidget(self.lineEdit)
+        self.lineEdit.deleteLater()
+        self.lineEdit = CS.FolderSelectLineEdit(self)
+        layout.insertWidget(index, self.lineEdit)
 
         now = datetime.now()
         self.date = now.date()
@@ -133,13 +143,16 @@ class MainwindowAct(QMainWindow,ui.ui_MainWindow.Ui_MainWindow):
 
         self.pushButton_2.clicked.connect(self.add_camera_view)
         self.pushButton.clicked.connect(self.list)
-        self.spinBox2.valueChanged.connect(self.change_parameters)
-        self.spinBox3.valueChanged.connect(self.change_parameters)
+        self.spinBox_2.valueChanged.connect(self.change_parameters)
+        self.spinBox_3.valueChanged.connect(self.change_parameters)
+        self.pushButton_5.clicked.connect(self.pause_Synchronous)
+        self.pushButton_6.clicked.connect(self.save_Synchronous)
+        
 
     
     def change_parameters(self):
-        frame_rate = self.spinBox3.value()
-        exposure_time = self.spinBox2.value()
+        frame_rate = self.spinBox_3.value()
+        exposure_time = self.spinBox_2.value()
         for cam_info in self.camera_map.values():
             worker = cam_info.get("worker")
             if worker:
@@ -147,7 +160,7 @@ class MainwindowAct(QMainWindow,ui.ui_MainWindow.Ui_MainWindow):
 
     
     def list(self):
-        if self.comboBox_CamerList.currentIndex() == -1:
+        if self.comboBox.currentIndex() == -1:
             self.device_manager = gx.DeviceManager()
             dev_mum, self.dev_info_list = self.device_manager.update_device_list()
 
@@ -158,7 +171,7 @@ class MainwindowAct(QMainWindow,ui.ui_MainWindow.Ui_MainWindow):
 
             for i, dev_info in enumerate(self.dev_info_list):
                 display_name = dev_info.get("display_name", f"Camera {i + 1}")
-                self.comboBox_CamerList.addItem(display_name, i)
+                self.comboBox.addItem(display_name, i)
         else:
             text = '<font color="red">' + "请勿重复查找相机!" + '</font>'
             self.textEdit.append(text)
@@ -337,17 +350,35 @@ class MainwindowAct(QMainWindow,ui.ui_MainWindow.Ui_MainWindow):
 
 
     def save_image(self,serial_number):
-        if not self.verticalGroupBox_2.isChecked():
-            sn = self.camera_labels[serial_number]['sn']
-            num_pic = self.camera_labels[serial_number]['num_pic']
-            file_name = f"{self.date}\\{sn}\\{num_pic}"
-            self.camera_map[serial_number]["num_pic"] = num_pic+1
-            self.last_images[serial_number].save(file_name)
-            self.camera_map[serial_number]['worker'].restart_acquisition()
+        file_dir = self.lineEdit.text()
+        extension_dir = self.camera_labels[serial_number]['sn']
+        num_pic = self.camera_labels[serial_number]['num_pic']
+        extension_name = num_pic
+        type_pic = "bmp"
+
+
+        file_name = f"{file_dir}\\{extension_dir}\\{extension_name}.{type_pic}"
+        self.camera_map[serial_number]["num_pic"] = num_pic+1
+        self.last_images[serial_number].save(file_name)
+        self.camera_map[serial_number]['worker'].restart_acquisition()
 
     def pause_camera(self,serial_number):
         self.camera_map[serial_number]['worker'].stop_acquisition()
 
+
+    def pause_Synchronous(self):
+        if not len(self.camera_map):
+            self.textEdit.append("至少打开一个相机！")
+            return
+        for serial_number in list(self.camera_map.keys()):
+            self.pause_camera(serial_number)
+    
+    def save_Synchronous(self):
+        if not len(self.camera_map):
+            self.textEdit.append("至少打开一个相机！")
+            return
+        for serial_number in list(self.camera_map.keys()):
+            self.save_image(serial_number)
 
 
     def closeEvent(self, event):
