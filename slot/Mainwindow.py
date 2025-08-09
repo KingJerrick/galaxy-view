@@ -7,7 +7,7 @@
 
 # DEBUG = True
 DEBUG = False
-version = "v2.2.0_Beta"        #版本号在此修改
+version = "v2.3.0_Beta"        #版本号在此修改
 
 import numpy as np
 import ui.ui_MainWindow
@@ -15,10 +15,10 @@ import ui.ui_save
 import os
 import gxipy as gx
 from PyQt5.QtWidgets import QMainWindow, QApplication, QFileDialog, QTextEdit, QLabel, QGridLayout,QWidget
-from PyQt5.QtCore import QTimer, Qt, QObject, pyqtSignal,QThread
+from PyQt5.QtCore import QTimer, Qt, QObject, pyqtSignal,QThread,QUrl
 from PIL import Image
 from PyQt5 import QtGui
-from PyQt5.QtGui import QPixmap, QImage
+from PyQt5.QtGui import QPixmap, QImage,QDesktopServices
 import slot.Custom_Widgets as CS
 from datetime import datetime
 import time
@@ -230,6 +230,7 @@ class MainwindowAct(QMainWindow,ui.ui_MainWindow.Ui_MainWindow):
         self.pushButton_5.clicked.connect(self.pause_Synchronous)
         self.pushButton_6.clicked.connect(self.save_Synchronous)
         self.pushButton_3.clicked.connect(self.save_Options)
+        self.pushButton_7.clicked.connect(self.open_folder)
 
         self.ED = 0
         self.EN = 0
@@ -475,6 +476,10 @@ class MainwindowAct(QMainWindow,ui.ui_MainWindow.Ui_MainWindow):
         else:
             file_name = f"{file_dir}\\{extension_dir}\\{extension_name}.{type_pic}"
 
+        folder_path = f"{file_dir}\\{extension_dir}"
+        if not os.path.exists(folder_path):
+            os.makedirs(folder_path)  # 可以递归创建多级目录
+
         self.last_images[serial_number].save(file_name)
         self.camera_map[serial_number]['worker'].restart_acquisition()
 
@@ -501,6 +506,12 @@ class MainwindowAct(QMainWindow,ui.ui_MainWindow.Ui_MainWindow):
 
     def save_Options(self):
         self.savewindow.show()
+
+    def open_folder(self):
+        file_dir = self.lineEdit.text()
+        if not os.path.exists(file_dir):
+            os.makedirs(file_dir)  # 可以递归创建多级目录
+        QDesktopServices.openUrl(QUrl.fromLocalFile(file_dir))
 
     def closeEvent(self, event):
         for serial_number in list(self.camera_map.keys()):

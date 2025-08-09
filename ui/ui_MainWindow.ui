@@ -44,7 +44,7 @@
     <property name="title">
      <string>程序控制</string>
     </property>
-    <layout class="QVBoxLayout" name="verticalLayout" stretch="0,0,0,0,0,1,0">
+    <layout class="QVBoxLayout" name="verticalLayout" stretch="0,0,0,0,0,1,0,0">
      <item>
       <widget class="QGroupBox" name="verticalGroupBox_5">
        <property name="title">
@@ -499,6 +499,33 @@
        </property>
        <property name="text">
         <string/>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QPushButton" name="pushButton_7">
+       <property name="minimumSize">
+        <size>
+         <width>50</width>
+         <height>50</height>
+        </size>
+       </property>
+       <property name="maximumSize">
+        <size>
+         <width>16777215</width>
+         <height>50</height>
+        </size>
+       </property>
+       <property name="font">
+        <font>
+         <family>Arial Black</family>
+         <pointsize>12</pointsize>
+         <weight>75</weight>
+         <bold>true</bold>
+        </font>
+       </property>
+       <property name="text">
+        <string>打开存储文件夹</string>
        </property>
       </widget>
      </item>
