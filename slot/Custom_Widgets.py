@@ -83,6 +83,7 @@ class FolderSelectLineEdit(QLineEdit):
         if event.button() == Qt.LeftButton:
             folder_path = QFileDialog.getExistingDirectory(self, "选择文件夹")
             if folder_path:
+                folder_path = folder_path.replace("/", "\\")
                 self.setText(folder_path)
         # 继续调用父类方法以保持其他行为（如焦点）
         super().mousePressEvent(event)

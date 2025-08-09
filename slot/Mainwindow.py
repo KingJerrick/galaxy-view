@@ -1,4 +1,4 @@
-# Copyright (C) 2024 - 2024 Jerrick Zhu, Inc. All Rights Reserved 
+# Copyright (C) 2023 - 2025 Jerrick Zhu, Inc. All Rights Reserved 
 #
 # @Time    : 2024/9/19 19:54
 # @Author  : Jerrick Zhu
@@ -7,11 +7,14 @@
 
 # DEBUG = True
 DEBUG = False
+version = "v2.2.0_Beta"        #版本号在此修改
+
 import numpy as np
 import ui.ui_MainWindow
+import ui.ui_save
 import os
 import gxipy as gx
-from PyQt5.QtWidgets import QMainWindow, QApplication, QFileDialog, QTextEdit, QLabel, QGridLayout
+from PyQt5.QtWidgets import QMainWindow, QApplication, QFileDialog, QTextEdit, QLabel, QGridLayout,QWidget
 from PyQt5.QtCore import QTimer, Qt, QObject, pyqtSignal,QThread
 from PIL import Image
 from PyQt5 import QtGui
@@ -19,11 +22,12 @@ from PyQt5.QtGui import QPixmap, QImage
 import slot.Custom_Widgets as CS
 from datetime import datetime
 import time
-
+import slot.utils
 
 import threading
 import time
 from PyQt5.QtCore import QObject, pyqtSignal
+
 
 class ImageAcquisitionWorker(QObject):
     image_acquired = pyqtSignal(object)  # numpy.ndarray类型传递时用object更稳妥
@@ -95,11 +99,85 @@ class ImageAcquisitionWorker(QObject):
         if self.current_frame is not None:
             self.current_frame_signal.emit(self.current_frame)
 
+class SaveWindow(QWidget,ui.ui_save.Ui_Form):
+    Change_ED_signal = pyqtSignal(int)  
+    Change_EN_signal = pyqtSignal(int)
+    Change_TYPE_signal = pyqtSignal(int)
+
+    def __init__(self):
+        super(SaveWindow, self).__init__()
+        self.setupUi(self)
+        self.ED = 0
+        self.EN = 0
+        self.TYPE = 0
+        self.change_lineedit()
+        
+        self.radioButton_ED_1.toggled.connect(self.change_al)
+        self.radioButton_ED_2.toggled.connect(self.change_al)
+        self.radioButton_EN_1.toggled.connect(self.change_al)
+        self.radioButton_EN_2.toggled.connect(self.change_al)
+        self.radioButton_EN_3.toggled.connect(self.change_al)
+        self.radioButton_T_1.toggled.connect(self.change_al)
+        self.radioButton_T_2.toggled.connect(self.change_al)
+        self.radioButton_T_3.toggled.connect(self.change_al)
+
+        self.pushButton.clicked.connect(self.close)
+
+    def change_al(self):
+        ser = self.sender()
+        if ser.isChecked():
+            if ser == self.radioButton_ED_1:
+                self.ED = 0
+            elif ser == self.radioButton_ED_2:
+                self.ED = 1
+            elif ser == self.radioButton_EN_1:
+                self.EN = 0
+            elif ser == self.radioButton_EN_2:
+                self.EN = 1
+            elif ser == self.radioButton_EN_3:
+                self.EN = 2
+            elif ser == self.radioButton_T_1:
+                self.TYPE = 0
+            elif ser == self.radioButton_T_2:
+                self.TYPE = 1
+            else:
+                self.TYPE = 2
+        self.change_lineedit()
+
+
+    def change_lineedit(self):
+        if not self.ED:
+            file_dir = "sn"
+        else:
+            file_dir = "camera_1"
+
+        if self.EN == 0:
+            file_name = "1"
+        elif self.EN == 1:
+            file_name = "Ⅰ"
+        else:
+            file_name = "a"
+        
+        if self.TYPE == 0:
+            file_type = "bmp"
+        elif self.TYPE == 1:
+            file_type = "jpg"
+        else:
+            file_type = "png"
+        
+        file = f'\\{file_dir}\\{file_name}.{file_type}'
+        self.lineEdit.setText(file)
+
+    def closeEvent(self, event):
+        self.Change_ED_signal.emit(self.ED)
+        self.Change_EN_signal.emit(self.EN)
+        self.Change_TYPE_signal.emit(self.TYPE)
+
+
 class MainwindowAct(QMainWindow,ui.ui_MainWindow.Ui_MainWindow):
     def __init__(self):
         super(MainwindowAct, self).__init__()
 
-        version = "v2.1.0_Alpha"        #版本号在此修改
         self.setupUi(self)
         self.camera_map = {}
         self.last_images = {}
@@ -130,6 +208,9 @@ class MainwindowAct(QMainWindow,ui.ui_MainWindow.Ui_MainWindow):
         self.textEdit.append("不勾选保存选项,将以类似以下格式进行文件保存")
         self.textEdit.append(f"{self.date}\\camera_id\\1.bmp")
         self.textEdit.append("\n")
+        self.textEdit.append("同步保存,将以类似以下格式进行文件保存")
+        self.textEdit.append(f"{self.date}\\camera_id\\s1.bmp")
+        self.textEdit.append("\n")
         self.textEdit.append("右键可清空")
 
         self.lineEdit.setText(f"{os.getcwd()}\\{self.date}")
@@ -142,12 +223,25 @@ class MainwindowAct(QMainWindow,ui.ui_MainWindow.Ui_MainWindow):
         self.gridGroupBox_2.toggled.connect(lambda checked: self.toggle_group_content(self.gridGroupBox_2, checked))
 
         self.pushButton_2.clicked.connect(self.add_camera_view)
-        self.pushButton.clicked.connect(self.list)
+        # self.pushButton.clicked.connect(self.list)
+        self.pushButton.clicked.connect(self.save_image)
         self.spinBox_2.valueChanged.connect(self.change_parameters)
         self.spinBox_3.valueChanged.connect(self.change_parameters)
         self.pushButton_5.clicked.connect(self.pause_Synchronous)
         self.pushButton_6.clicked.connect(self.save_Synchronous)
-        
+        self.pushButton_3.clicked.connect(self.save_Options)
+
+        self.ED = 0
+        self.EN = 0
+        self.TYPE = 0
+
+        self.savewindow = SaveWindow()
+        self.savewindow.Change_ED_signal.connect(lambda v:setattr(self,"ED",v))
+        self.savewindow.Change_EN_signal.connect(lambda v:setattr(self,"EN",v))
+        self.savewindow.Change_TYPE_signal.connect(lambda v:setattr(self,"TYPE",v))
+
+        self.Synchronous_num = 1
+        self.IS_Synchronous = False
 
     
     def change_parameters(self):
@@ -351,14 +445,36 @@ class MainwindowAct(QMainWindow,ui.ui_MainWindow.Ui_MainWindow):
 
     def save_image(self,serial_number):
         file_dir = self.lineEdit.text()
-        extension_dir = self.camera_labels[serial_number]['sn']
-        num_pic = self.camera_labels[serial_number]['num_pic']
-        extension_name = num_pic
-        type_pic = "bmp"
+        if self.IS_Synchronous:
+            num_pic = self.Synchronous_num
+        else:
+            num_pic = self.camera_map[serial_number]['num_pic']
+            self.camera_map[serial_number]["num_pic"] = num_pic+1
 
+        if not self.ED:
+            extension_dir = self.camera_map[serial_number]['sn']
+        else:
+            extension_dir = f"camera_{serial_number}"
 
-        file_name = f"{file_dir}\\{extension_dir}\\{extension_name}.{type_pic}"
-        self.camera_map[serial_number]["num_pic"] = num_pic+1
+        if self.EN == 0:
+            extension_name = str(num_pic)
+        elif self.EN == 1:
+            extension_name = slot.utils.int_to_roman(num_pic)
+        else:
+            extension_name = slot.utils.int_to_letters(num_pic)
+        
+        if self.TYPE == 0:
+            type_pic = "bmp"
+        elif self.TYPE == 1:
+            type_pic = "jpg"
+        else:
+            type_pic = "png"
+        
+        if self.IS_Synchronous:
+            file_name = f"{file_dir}\\{extension_dir}\\s{extension_name}.{type_pic}"
+        else:
+            file_name = f"{file_dir}\\{extension_dir}\\{extension_name}.{type_pic}"
+
         self.last_images[serial_number].save(file_name)
         self.camera_map[serial_number]['worker'].restart_acquisition()
 
@@ -377,16 +493,17 @@ class MainwindowAct(QMainWindow,ui.ui_MainWindow.Ui_MainWindow):
         if not len(self.camera_map):
             self.textEdit.append("至少打开一个相机！")
             return
+        self.IS_Synchronous = True
         for serial_number in list(self.camera_map.keys()):
             self.save_image(serial_number)
+        self.IS_Synchronous = False
+        self.Synchronous_num = self.Synchronous_num + 1 
 
+    def save_Options(self):
+        self.savewindow.show()
 
     def closeEvent(self, event):
         for serial_number in list(self.camera_map.keys()):
             self.close_camera(serial_number)
         event.accept()  # 正常关闭窗口
-
-
-
-
 
