@@ -7,7 +7,7 @@
 
 # DEBUG = True
 DEBUG = False
-version = "v2.3.0_Beta"        #版本号在此修改
+version = "v2.3.1_Beta"        #版本号在此修改
 
 import numpy as np
 import ui.ui_MainWindow
@@ -223,8 +223,8 @@ class MainwindowAct(QMainWindow,ui.ui_MainWindow.Ui_MainWindow):
         self.gridGroupBox_2.toggled.connect(lambda checked: self.toggle_group_content(self.gridGroupBox_2, checked))
 
         self.pushButton_2.clicked.connect(self.add_camera_view)
-        # self.pushButton.clicked.connect(self.list)
-        self.pushButton.clicked.connect(self.save_image)
+        self.pushButton.clicked.connect(self.list)
+        # self.pushButton.clicked.connect(self.save_image)
         self.spinBox_2.valueChanged.connect(self.change_parameters)
         self.spinBox_3.valueChanged.connect(self.change_parameters)
         self.pushButton_5.clicked.connect(self.pause_Synchronous)
