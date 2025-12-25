@@ -293,148 +293,142 @@ class MainwindowAct(QMainWindow,ui.ui_MainWindow.Ui_MainWindow):
             self.textEdit.append("最多支持12路相机")
             return
 
-        if self.spinBox.value() in self.camera_map:
-            self.textEdit.append(f"相机{self.spinBox.value()}已打开")
+        cam_id = self.spinBox.value()
+        if cam_id in self.camera_map:
+            self.textEdit.append(f"相机编号 {cam_id} 已打开")
             return
 
+        camera_index = self.comboBox.currentIndex()
+        if camera_index == -1:
+            self.textEdit.append("请先枚举并选择相机")
+            return
 
-        label = CS.CameraLabel(self.spinBox.value())
-        # label.setText(f"camera{self.spinBox.value()}")
-        label.setAlignment(Qt.AlignCenter)
-        label.setStyleSheet("border: 1px solid gray;")
+        str_sn = self.dev_info_list[camera_index].get("sn")
+        for info in self.camera_map.values():
+            if str_sn == info['sn']:
+                self.textEdit.append(f"序列号 {str_sn} 的相机已在运行中")
+                return
 
-        worker = ImageAcquisitionWorker()
-        thread = QThread()
-        worker.moveToThread(thread)
+        try:
+            # 1. 打开相机硬件
+            cam_obj = self.device_manager.open_device_by_sn(str_sn)
 
-        camera_index = self.comboBox_CamerList.currentIndex()
-        str_cn = self.dev_info_list[camera_index].get("sn")
-        self.cam = self.device_manager.open_device_by_sn(str_cn)
+            # 2. 创建 UI 标签
+            label = CS.CameraLabel(cam_id)
+            label.setAlignment(Qt.AlignCenter)
+            label.setStyleSheet("border: 1px solid gray;")
 
-        worker.set_camera(self.cam)  # 打开相机并设置
+            # 3. 初始化工作线程
+            worker = ImageAcquisitionWorker()
+            thread = QThread()
+            worker.moveToThread(thread)
+            worker.set_camera(cam_obj)  # 传入当前打开的对象
 
-        worker.image_acquired.connect(lambda img, l=label: self.update_label(l, img))
+            # 4. 绑定信号
+            worker.image_acquired.connect(lambda img, l=label: self.update_label(l, img))
+            thread.started.connect(worker.start_acquisition)
 
-        thread.started.connect(worker.start_acquisition)
+            label.closed.connect(self.close_camera)
+            label.save.connect(self.save_image)
+            label.pause.connect(self.pause_camera)
 
-        thread.start()
+            # 5. 保存到 map (注意这里保存了 cam 对象)
+            self.camera_map[cam_id] = {
+                "sn": str_sn,
+                "label": label,
+                "worker": worker,
+                "thread": thread,
+                "cam": cam_obj,  # 必须保存引用以便关闭
+                "num_pic": 1,
+            }
 
+            # 6. 启动并刷新布局
+            thread.start()
+            self.update_label_sizes()
+            self.textEdit.append(f"相机 {cam_id} (SN:{str_sn}) 开启成功")
 
-        label.closed.connect(self.close_camera)
-        label.save.connect(self.save_image)
-        label.pause.connect(self.pause_camera)
-
-        self.camera_map[self.spinBox.value()] = {"sn":str_cn,
-                                                 "label":label,
-                                                 "worker":worker,
-                                                 "thread":thread,
-                                                 "num_pic":1,
-                                                 }
-
-        self.update_label_sizes()
+        except Exception as e:
+            self.textEdit.append(f'<font color="red">开启相机失败: {str(e)}</font>')
 
     def update_label_sizes(self):
-        # 获取当前 label 列表（从 camera_map）
-        # 按照编号升序排序 camera_map
-        self.camera_labels = [self.camera_map[k]["label"] for k in sorted(self.camera_map.keys())]
-        total = len(self.camera_labels)
+        # 按照编号升序获取所有当前有效的 label
+        sorted_keys = sorted(self.camera_map.keys())
+        active_labels = [self.camera_map[k]["label"] for k in sorted_keys]
+        total = len(active_labels)
+
         if total == 0:
+            # 如果没相机了，清空布局即可
+            while self.grid_layout.count():
+                item = self.grid_layout.takeAt(0)
+                if item.widget(): item.widget().hide()
             return
 
         container_width = self.gridGroupBox.width()
         container_height = self.gridGroupBox.height()
 
-        # 单独处理 1 和 2 个 label 的特殊布局
+        # 计算行列数
         if total == 1:
-            label_width, label_height = 1200, 800
             best_rows, best_cols = 1, 1
         elif total == 2:
-            label_width, label_height = 800, 600
             best_rows, best_cols = 1, 2
+        elif total <= 4:
+            best_rows, best_cols = 2, 2
+        elif total <= 6:
+            best_rows, best_cols = 2, 3
+        elif total <= 9:
+            best_rows, best_cols = 3, 3
         else:
-            # 自动寻找最优布局
-            best_rows, best_cols = None, None
-            max_area = 0
-            best_label_size = (0, 0)
+            best_rows, best_cols = 3, 4
 
-            for cols in range(1, 5):  # 最多4列
-                rows = (total + cols - 1) // cols
-                if rows > 3:
-                    continue
+        spacing = 10
+        label_width = (container_width - (best_cols + 1) * spacing) // best_cols
+        label_height = (container_height - (best_rows + 1) * spacing) // best_rows
 
-                spacing = 15
-                available_width = container_width - (cols + 1) * spacing
-                available_height = container_height - (rows + 1) * spacing
+        # 重新填充布局前，先清空现有布局关系（不删除对象）
+        for i in reversed(range(self.grid_layout.count())):
+            self.grid_layout.takeAt(i)
 
-                label_width = available_width // cols
-                label_height = available_height // rows
-                aspect_ratio = label_width / label_height
-
-                if 1.0 <= aspect_ratio <= 16 / 9:
-                    area = label_width * label_height
-                    if area > max_area:
-                        max_area = area
-                        best_rows, best_cols = rows, cols
-                        best_label_size = (label_width, label_height)
-
-            if best_rows is None:
-                best_cols = min(total, 4)
-                best_rows = (total + best_cols - 1) // best_cols
-                spacing = 10
-                best_label_size = (
-                    (container_width - (best_cols + 1) * spacing) // best_cols,
-                    (container_height - (best_rows + 1) * spacing) // best_rows
-                )
-
-            label_width, label_height = best_label_size
-
-        # 清空旧布局
-        while self.grid_layout.count():
-            item = self.grid_layout.takeAt(0)
-            if item.widget():
-                item.widget().setParent(None)
-
-        # 重新布局
-        for idx, label in enumerate(self.camera_labels):
+        # 重新按计算好的行列添加
+        for idx, label in enumerate(active_labels):
             row, col = divmod(idx, best_cols)
             self.grid_layout.addWidget(label, row, col)
             label.setFixedSize(label_width, label_height)
+            label.show()  # 确保可见=
 
-    def close_camera(self, serial_number):
-        if serial_number not in self.camera_map:
-            self.textEdit.append(f"相机 {serial_number} 不存在")
+    def close_camera(self, cam_id):
+        if cam_id not in self.camera_map:
             return
 
-        info = self.camera_map[serial_number]
+        info = self.camera_map[cam_id]
 
-        # 停止线程
+        # 1. 停止采集逻辑和线程
         if "worker" in info:
             info["worker"].stop_acquisition()
         if "thread" in info:
             info["thread"].quit()
-            info["thread"].wait()
+            info["thread"].wait()  # 等待线程安全退出
 
-        # 关闭相机连接
-        if "cam" in info:
+        # 2. 关键：关闭硬件连接，释放 SDK 句柄
+        if "cam" in info and info["cam"] is not None:
             try:
                 info["cam"].close_device()
-                self.textEdit.append(f"相机 {serial_number} 已断开")
+                self.textEdit.append(f"相机 {cam_id} 硬件已安全释放")
             except Exception as e:
-                self.textEdit.append(f"关闭相机 {serial_number} 失败: {e}")
+                self.textEdit.append(f"释放相机硬件异常: {e}")
 
-        # 删除 label（不需要手动 del，它的 parent 会被清理）
+        # 3. 从 UI 布局中移除标签
         label = info.get("label")
         if label:
+            self.grid_layout.removeWidget(label)
             label.setParent(None)
+            label.deleteLater()
 
-        # 删除记录
-        del self.camera_map[serial_number]
-        if serial_number in self.last_images:
-            del self.last_images[serial_number]
+        # 4. 清理内存记录
+        del self.camera_map[cam_id]
+        if cam_id in self.last_images:
+            del self.last_images[cam_id]
 
-        self.textEdit.append(f"相机 {serial_number} 已关闭")
-        self.textEdit.append(f"当前相机总数: {len(self.camera_map)}")
-
+        self.textEdit.append(f"相机 {cam_id} 已完全关闭")
         self.update_label_sizes()
 
 
@@ -480,7 +474,8 @@ class MainwindowAct(QMainWindow,ui.ui_MainWindow.Ui_MainWindow):
         if not os.path.exists(folder_path):
             os.makedirs(folder_path)  # 可以递归创建多级目录
 
-        self.last_images[serial_number].save(file_name)
+        img = Image.fromarray(self.last_images[serial_number])
+        img.save(file_name)
         self.camera_map[serial_number]['worker'].restart_acquisition()
 
     def pause_camera(self,serial_number):
